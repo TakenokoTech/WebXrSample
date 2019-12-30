@@ -1,0 +1,19 @@
+<!DOCTYPE html>
+
+<html>
+    <head>
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.4.1/jquery.min.js"></script>
+        <script src="js/jquery.qrcode.min.js"></script>
+    </head>
+    <body>
+        <div id="qrcode" style="text-align: center;"></div>
+        <script type="text/javascript">
+            console.log(`https://${location.host}/dev-dist`);
+            jQuery("#qrcode").qrcode({
+                width: 128,
+                height: 128,
+                text: `https://${location.host}/dev-dist`
+            });
+        </script>
+    </body>
+</html>
