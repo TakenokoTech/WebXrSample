@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+
+<html>
+    <head>
+        <meta charset="utf-8" />
+        <meta name="viewport" content="width=device-width, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0" />
+        <link type="text/css" href="css/modelviewer.css" rel="stylesheet" />
+        <script type="module" src="https://unpkg.com/@google/model-viewer/dist/model-viewer.js"></script>
+        <script nomodule src="https://unpkg.com/@google/model-viewer/dist/model-viewer-legacy.js"></script>
+    </head>
+
+    <body>
+        <model-viewer
+            id="model"
+            ar
+            src="assets/Hamburger_gltf/Hamburger.gltf"
+            alt="A 3D model of an astronaut"
+            auto-rotate
+            camera-controls
+            background-color="#455A64"
+        ></model-viewer>
+
+        <script src="./modelviewer.bundle.js"></script>
+    </body>
+</html>
