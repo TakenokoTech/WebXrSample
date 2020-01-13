@@ -7,6 +7,7 @@
         "start": "webpack --mode=development",
         "watch": "webpack -w --mode=development",
         "build": "webpack --mode=production",
+        "clean": "rm -rf ./dev-dist && rm -rf ./prod-dist",
         "gh": "gh-pages -d build",
         "ssl-serve": "npx http-server -S --cert .cert/local.crt --key .cert/local.key -p 4433 -O -c0",
         "serve": "http-server -p 8080",

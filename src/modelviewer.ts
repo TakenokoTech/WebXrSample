@@ -14,7 +14,9 @@ console.log(window.innerHeight);
 
 function init() {
     var element = document.getElementById('model');
-    element.style.height = `${window.innerHeight}px`;
+    if (element) {
+        element.style.height = `${window.innerHeight}px`;
+    }
 }
 
 window.addEventListener('resize', () => {

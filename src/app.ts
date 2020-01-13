@@ -1,5 +1,7 @@
 import 'material-design-lite/dist/material.min.css';
 import 'three/build/three.min';
+import * as THREE from 'three';
+import { Reticle } from './utils';
 
 const MODEL_OBJ_URL = '../assets/ArcticFox_Posed.obj';
 const MODEL_MTL_URL = '../assets/ArcticFox_Posed.mtl';
@@ -9,24 +11,23 @@ class App {
     constructor() {
         this.onXRFrame = this.onXRFrame.bind(this);
         this.onEnterAR = this.onEnterAR.bind(this);
-        this.onClick = this.onClick.bind(this);
 
         this.init();
     }
 
     async init() {
-        if (navigator.xr && XRSession.prototype.requestHitTest) {
-            try {
-                this.device = navigator.xr; //await navigator.xr.requestDevice();
-            } catch (e) {
-                console.log(navigator.xr);
-                console.log(e);
-                // this.onNoXRDevice();
-                // return;
-            }
+        console.log('init');
+        if (navigator.xr && XRSession.prototype.requestHitTestSource) {
+            console.log('navigator.xr && XRSession.prototype.requestHitTestSource ok');
+            navigator.xr.isSessionSupported('immersive-ar').then(
+                () => {
+                    console.log('supportsSession immersive-ar ok');
+                },
+                () => {
+                    this.onNoXRDevice();
+                },
+            );
         } else {
-            console.log(navigator.xr);
-            console.log(XRSession.prototype.requestHitTest);
             this.onNoXRDevice();
             return;
         }
@@ -34,124 +35,137 @@ class App {
     }
 
     async onEnterAR() {
+        console.log('onEnterAR');
         const outputCanvas = document.createElement('canvas');
-        const ctx = outputCanvas.getContext('xrpresent');
-
-        try {
-            const session = await this.device.requestSession({
-                outputContext: ctx,
-                environmentIntegration: true,
+        navigator.xr
+            .requestSession('immersive-ar')
+            .then(xrSession => {
+                this.session = xrSession;
+                console.log('requestSession immersive-ar ok');
+                xrSession.addEventListener('end', this.onXRSessionEnded.bind(this));
+                document.body.appendChild(outputCanvas);
+                this.onSessionStarted();
+            })
+            .catch(error => {
+                console.warn('requestSession immersive-ar error: ', error);
+                this.onNoXRDevice();
             });
-
-            document.body.appendChild(outputCanvas);
-            this.onSessionStarted(session);
-        } catch (e) {
-            console.log(e);
-            this.onNoXRDevice();
-        }
     }
 
+    onXRSessionEnded = () => {
+        console.log('onXRSessionEnded');
+        document.body.classList.remove('ar');
+        document.body.classList.remove('stabilized');
+        if (this.renderer) {
+            this.renderer.vr.setSession(null);
+            this.stabilized = false;
+        }
+    };
+
     onNoXRDevice() {
+        console.log('onNoXRDevice');
         document.body.classList.add('unsupported');
     }
 
-    async onSessionStarted(session) {
-        this.session = session;
+    async onSessionStarted() {
+        console.log('onSessionStarted');
         document.body.classList.add('ar');
         this.renderer = new THREE.WebGLRenderer({
             alpha: true,
             preserveDrawingBuffer: true,
         });
         this.renderer.autoClear = false;
-
-        this.renderer.shadowMap.enabled = true;
-        this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-
         this.gl = this.renderer.getContext();
-
-        await this.gl.setCompatibleXRDevice(this.session.device);
-
+        this.renderer.vr.enabled = true;
+        this.XRReferenceSpaceType = 'local';
+        this.renderer.vr.setReferenceSpaceType(this.XRReferenceSpaceType);
+        this.renderer.vr.setSession(this.session);
         this.session.baseLayer = new XRWebGLLayer(this.session, this.gl);
-
-        const framebuffer = this.session.baseLayer.framebuffer;
-        this.renderer.setFramebuffer(framebuffer);
-
-        this.scene = DemoUtils.createLitScene();
-
-        DemoUtils.loadModel(MODEL_OBJ_URL, MODEL_MTL_URL).then(model => {
-            this.model = model;
-            this.model.children.forEach(mesh => (mesh.castShadow = true));
-            this.model.scale.set(MODEL_SCALE, MODEL_SCALE, MODEL_SCALE);
-        });
-
+        this.scene = new THREE.Scene();
+        const geometry = new THREE.BoxBufferGeometry(0.1, 0.2, 0.3);
+        const material = new THREE.MeshNormalMaterial();
+        geometry.applyMatrix(new THREE.Matrix4().makeTranslation(0, 0.25, 0));
+        this.model = new THREE.Mesh(geometry, material);
         this.camera = new THREE.PerspectiveCamera();
         this.camera.matrixAutoUpdate = false;
-
-        this.reticle = new Reticle(this.session, this.camera);
+        this.reticle = new Reticle(this.camera);
         this.scene.add(this.reticle);
-
-        this.frameOfRef = await this.session.requestFrameOfReference('eye-level');
-        this.session.requestAnimationFrame(this.onXRFrame);
-
-        window.addEventListener('click', this.onClick);
+        this.frameOfRef = await this.session.requestReferenceSpace('local');
+        this.tick();
     }
 
+    tick = () => {
+        // console.log('tick');
+        this.rafId = this.session.requestAnimationFrame(this.onXRFrame);
+    };
+
     onXRFrame(time, frame) {
-        let session = frame.session;
-        let pose = frame.getDevicePose(this.frameOfRef);
-
-        this.reticle.update(this.frameOfRef);
-
+        console.log('onXRFrame');
+        const { session } = frame;
+        const pose = 'getDevicePose' in frame ? frame.getDevicePose(this.frameOfRef) : frame.getViewerPose(this.frameOfRef);
+        this.tick();
+        if (pose == null) {
+            return;
+        }
+        for (const view of frame.getViewerPose(this.frameOfRef).views) {
+            console.log('view', view);
+            const viewport = session.renderState.baseLayer.getViewport(view);
+            this.renderer.setViewport(viewport.x, viewport.y, viewport.width, viewport.height);
+            this.camera.projectionMatrix.fromArray(view.projectionMatrix);
+            const viewMatrix = new THREE.Matrix4().fromArray(view.transform.inverse.matrix);
+            this.camera.matrix.getInverse(viewMatrix);
+            this.camera.updateMatrixWorld(true);
+            this.reticle.update(this.session, this.frameOfRef);
+            this.processXRInput(frame);
+            this.renderer.render(this.scene, this.camera);
+        }
         if (this.reticle.visible && !this.stabilized) {
             this.stabilized = true;
             document.body.classList.add('stabilized');
         }
+    }
 
-        session.requestAnimationFrame(this.onXRFrame);
-
-        this.gl.bindFramebuffer(this.gl.FRAMEBUFFER, this.session.baseLayer.framebuffer);
-
+    processXRInput(frame) {
+        console.log('processXRInput');
+        const { session } = frame;
+        const sources = Array.from(session.inputSources).filter(input => input.targetRayMode === 'screen');
+        if (sources.length === 0) {
+            return;
+        }
+        const pose = frame.getPose(sources[0].targetRaySpace, this.frameOfRef);
         if (pose) {
-            for (let view of frame.views) {
-                const viewport = session.baseLayer.getViewport(view);
-                this.renderer.setSize(viewport.width, viewport.height);
-
-                this.camera.projectionMatrix.fromArray(view.projectionMatrix);
-                const viewMatrix = new THREE.Matrix4().fromArray(pose.getViewMatrix(view));
-                this.camera.matrix.getInverse(viewMatrix);
-                this.camera.updateMatrixWorld(true);
-
-                this.renderer.render(this.scene, this.camera);
-            }
+            this.placeModel();
         }
     }
 
-    async onClick(e) {
-        if (!this.model) {
-            return;
-        }
-
+    async placeModel() {
+        console.debug('placeModel');
         const x = 0;
         const y = 0;
-
+        if (this.session == null) {
+            return;
+        }
         this.raycaster = this.raycaster || new THREE.Raycaster();
         this.raycaster.setFromCamera({ x, y }, this.camera);
         const ray = this.raycaster.ray;
-
-        const origin = new Float32Array(ray.origin.toArray());
-        const direction = new Float32Array(ray.direction.toArray());
-        const hits = await this.session.requestHitTest(origin, direction, this.frameOfRef);
-
-        if (hits.length) {
+        let xrray = new XRRay(ray.origin, ray.direction);
+        let hits;
+        try {
+            hits = await this.session.requestHitTest(xrray, this.frameOfRef);
+        } catch (e) {
+            console.log(e);
+        }
+        if (hits && hits.length) {
+            const presentedScene = this.scene;
             const hit = hits[0];
             const hitMatrix = new THREE.Matrix4().fromArray(hit.hitMatrix);
             this.model.position.setFromMatrixPosition(hitMatrix);
-            DemoUtils.lookAtOnY(this.model, this.camera);
-
-            const shadowMesh = this.scene.children.find(c => c.name === 'shadowMesh');
-            shadowMesh.position.y = this.model.position.y;
-
             this.scene.add(this.model);
+            const camPosition = new THREE.Vector3().setFromMatrixPosition(this.camera.matrix);
+            this.model.lookAt(camPosition.x, this.model.position.y, camPosition.z);
+            if (presentedScene.pivot) {
+                this.model.rotateY(-presentedScene.pivot.rotation.y);
+            }
         }
     }
 }
